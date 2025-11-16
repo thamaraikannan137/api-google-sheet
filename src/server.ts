@@ -3,11 +3,19 @@ import cors from "cors";
 import { google } from "googleapis";
 import session from "express-session";
 import dotenv from "dotenv";
+import multer from "multer";
+import path from "path";
+import fs from "fs";
+import { Readable } from "stream";
 
 dotenv.config();
 
 const app = express();
+
+// Body parser middleware - must be before multer
 app.use(express.json());
+app.use(express.urlencoded({ extended: true }));
+
 app.use(cors({
   origin: process.env.FRONTEND_URL || "http://localhost:5173",
   credentials: true,
@@ -40,6 +48,63 @@ const oauth2Client = new google.auth.OAuth2(
 );
 
 const RANGE = "Sheet1"; // Default range (adjust based on your sheet name)
+
+// ==================== FILE UPLOAD CONFIGURATION ====================
+
+// Create uploads directory if it doesn't exist
+const uploadsDir = path.join(__dirname, "../uploads");
+if (!fs.existsSync(uploadsDir)) {
+  fs.mkdirSync(uploadsDir, { recursive: true });
+}
+
+// Configure multer for file uploads
+const storage = multer.diskStorage({
+  destination: (req, file, cb) => {
+    const sessionId = getSessionId(req as express.Request);
+    const uploadPath = path.join(uploadsDir, sessionId || "temp");
+    if (!fs.existsSync(uploadPath)) {
+      fs.mkdirSync(uploadPath, { recursive: true });
+    }
+    cb(null, uploadPath);
+  },
+  filename: (req, file, cb) => {
+    // Generate unique filename: timestamp-originalname
+    const uniqueSuffix = Date.now() + "-" + Math.round(Math.random() * 1e9);
+    const ext = path.extname(file.originalname);
+    const name = path.basename(file.originalname, ext);
+    cb(null, `${name}-${uniqueSuffix}${ext}`);
+  },
+});
+
+// File filter - allow images and common document types
+const fileFilter = (req: express.Request, file: Express.Multer.File, cb: multer.FileFilterCallback) => {
+  const allowedMimes = [
+    "image/jpeg",
+    "image/jpg",
+    "image/png",
+    "image/gif",
+    "image/webp",
+    "application/pdf",
+    "application/msword",
+    "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    "application/vnd.ms-excel",
+    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+  ];
+
+  if (allowedMimes.includes(file.mimetype)) {
+    cb(null, true);
+  } else {
+    cb(new Error(`File type ${file.mimetype} is not allowed. Allowed types: images, PDF, Word, Excel`));
+  }
+};
+
+const upload = multer({
+  storage: storage,
+  limits: {
+    fileSize: 10 * 1024 * 1024, // 10MB limit
+  },
+  fileFilter: fileFilter,
+});
 
 // In-memory storage for user sessions (in production, use Redis or database)
 interface UserSession {
@@ -232,6 +297,196 @@ async function deleteRow(sessionId: string, spreadsheetId: string, row: number) 
   }
 }
 
+// ==================== GOOGLE DRIVE FUNCTIONS ====================
+
+// Function to upload file to Google Drive
+async function uploadFileToDrive(
+  sessionId: string,
+  filePath: string,
+  fileName: string,
+  mimeType: string,
+  folderName: string = "Expense Attachments"
+): Promise<{ fileId: string; webViewLink: string; webContentLink: string }> {
+  try {
+    await ensureValidToken(sessionId);
+    const auth = getUserAuthClient(sessionId);
+    const drive = google.drive({ version: "v3", auth });
+    const userSession = userSessions[sessionId];
+
+    // Create or get folder for expense attachments
+    let folderId: string | null = null;
+    
+    // Search for existing folder
+    const folderQuery = `name='${folderName}' and mimeType='application/vnd.google-apps.folder' and trashed=false`;
+    const folderResponse = await drive.files.list({
+      q: folderQuery,
+      fields: "files(id, name)",
+      spaces: "drive",
+    });
+
+    if (folderResponse.data.files && folderResponse.data.files.length > 0) {
+      folderId = folderResponse.data.files[0].id || null;
+    } else {
+      // Create folder if it doesn't exist
+      const folderMetadata = {
+        name: folderName,
+        mimeType: "application/vnd.google-apps.folder",
+      };
+      const folder = await drive.files.create({
+        requestBody: folderMetadata,
+        fields: "id",
+      });
+      folderId = folder.data.id || null;
+    }
+
+    // Read file from disk as buffer
+    const fileBuffer = fs.readFileSync(filePath);
+
+    // Upload file to Drive
+    const fileMetadata = {
+      name: fileName,
+      parents: folderId ? [folderId] : undefined,
+    };
+
+    // Create a readable stream from buffer for googleapis
+    const fileStream = Readable.from(fileBuffer);
+
+    const media = {
+      mimeType: mimeType,
+      body: fileStream,
+    };
+
+    const uploadedFile = await drive.files.create({
+      requestBody: fileMetadata,
+      media: media,
+      fields: "id, webViewLink, webContentLink",
+    });
+
+    // Delete temporary file
+    fs.unlinkSync(filePath);
+
+    return {
+      fileId: uploadedFile.data.id || "",
+      webViewLink: uploadedFile.data.webViewLink || "",
+      webContentLink: uploadedFile.data.webContentLink || "",
+    };
+  } catch (error: any) {
+    console.error("Error uploading file to Drive:", error);
+    // Clean up temp file if it exists
+    if (fs.existsSync(filePath)) {
+      fs.unlinkSync(filePath);
+    }
+    throw error;
+  }
+}
+
+// Function to get file from Google Drive
+async function getFileFromDrive(sessionId: string, fileId: string): Promise<{ stream: any; mimeType: string; fileName: string }> {
+  try {
+    await ensureValidToken(sessionId);
+    const auth = getUserAuthClient(sessionId);
+    const drive = google.drive({ version: "v3", auth });
+
+    // Get file metadata
+    const fileMetadata = await drive.files.get({
+      fileId: fileId,
+      fields: "name, mimeType",
+    });
+
+    // Get file content
+    const fileStream = await drive.files.get(
+      {
+        fileId: fileId,
+        alt: "media",
+      },
+      { responseType: "stream" }
+    );
+
+    return {
+      stream: fileStream.data,
+      mimeType: fileMetadata.data.mimeType || "application/octet-stream",
+      fileName: fileMetadata.data.name || "file",
+    };
+  } catch (error: any) {
+    console.error("Error getting file from Drive:", error);
+    throw error;
+  }
+}
+
+// Function to delete file from Google Drive
+async function deleteFileFromDrive(sessionId: string, fileId: string): Promise<void> {
+  try {
+    await ensureValidToken(sessionId);
+    const auth = getUserAuthClient(sessionId);
+    const drive = google.drive({ version: "v3", auth });
+
+    await drive.files.delete({
+      fileId: fileId,
+    });
+  } catch (error: any) {
+    console.error("Error deleting file from Drive:", error);
+    throw error;
+  }
+}
+
+// Helper function to convert column index to column letter (A, B, ..., Z, AA, AB, ...)
+function getColumnLetter(columnIndex: number): string {
+  let result = "";
+  while (columnIndex >= 0) {
+    result = String.fromCharCode(65 + (columnIndex % 26)) + result;
+    columnIndex = Math.floor(columnIndex / 26) - 1;
+  }
+  return result;
+}
+
+// Function to update attachment column in Google Sheet
+async function updateAttachmentColumn(
+  sessionId: string,
+  spreadsheetId: string,
+  row: number,
+  attachmentColumnIndex: number,
+  driveFileId: string
+): Promise<void> {
+  try {
+    await ensureValidToken(sessionId);
+    const auth = getUserAuthClient(sessionId);
+    const sheets = google.sheets({ version: "v4", auth });
+
+    // Get headers to find attachment column
+    const headers = await readSheet(sessionId, spreadsheetId, `${RANGE}!1:1`);
+    const headerRow = headers[0] || [];
+
+    // Find or create attachment column
+    let attachmentColIndex = attachmentColumnIndex;
+    if (attachmentColIndex === -1) {
+      // Column doesn't exist, add it
+      const newColumnIndex = headerRow.length;
+      attachmentColIndex = newColumnIndex;
+      
+      // Add header
+      const columnLetter = getColumnLetter(newColumnIndex);
+      await sheets.spreadsheets.values.update({
+        spreadsheetId: spreadsheetId,
+        range: `${RANGE}!${columnLetter}1`,
+        valueInputOption: "USER_ENTERED",
+        requestBody: { values: [["Attachment Path"]] },
+      });
+    }
+
+    // Update the cell with Drive file ID
+    const columnLetter = getColumnLetter(attachmentColIndex);
+    await sheets.spreadsheets.values.update({
+      spreadsheetId: spreadsheetId,
+      range: `${RANGE}!${columnLetter}${row}`,
+      valueInputOption: "USER_ENTERED",
+      requestBody: { values: [[driveFileId]] },
+    });
+  } catch (error: any) {
+    console.error("Error updating attachment column:", error);
+    throw error;
+  }
+}
+
 // ==================== AUTHENTICATION ROUTES ====================
 
 // GET /auth/google - Initiate Google OAuth flow
@@ -239,6 +494,7 @@ app.get("/auth/google", (req, res) => {
   const scopes = [
     "https://www.googleapis.com/auth/spreadsheets",
     "https://www.googleapis.com/auth/userinfo.email",
+    "https://www.googleapis.com/auth/drive.file", // Google Drive API scope for file uploads
   ];
 
   const authUrl = oauth2Client.generateAuthUrl({
@@ -433,10 +689,23 @@ app.post("/expenses", requireAuth, async (req, res) => {
     const spreadsheetId = userSession!.spreadsheetId!;
     
     const expenseData = req.body;
-    // Convert expense object to array of values
-    const values = [Object.values(expenseData)];
     
-    await appendToSheet(sessionId, spreadsheetId, values);
+    // Get headers to ensure all columns are included
+    const rows = await readSheet(sessionId, spreadsheetId);
+    const headers = rows[0] || [];
+    
+    // Convert expense object to array of values matching header order
+    const values: any[] = [];
+    headers.forEach((header: string) => {
+      // Skip attachment column - it's handled separately
+      if (header.toLowerCase().includes("attachment") || header.toLowerCase().includes("file")) {
+        values.push(""); // Empty for attachment column
+      } else {
+        values.push(expenseData[header] || "");
+      }
+    });
+    
+    await appendToSheet(sessionId, spreadsheetId, [values]);
     res.status(200).json({ message: "Expense added successfully" });
   } catch (error: any) {
     console.error("Error adding expense:", error);
@@ -462,8 +731,22 @@ app.put("/expenses/:row", requireAuth, async (req, res) => {
     }
     
     const expenseData = req.body;
-    // Convert expense object to array of values
-    const values = Object.values(expenseData);
+    
+    // Get headers to ensure all columns are included
+    const rows = await readSheet(sessionId, spreadsheetId);
+    const headers = rows[0] || [];
+    const currentRow = rows[row - 1] || [];
+    
+    // Convert expense object to array of values matching header order
+    const values: any[] = [];
+    headers.forEach((header: string, index: number) => {
+      // Preserve attachment column value if it exists
+      if (header.toLowerCase().includes("attachment") || header.toLowerCase().includes("file")) {
+        values.push(currentRow[index] || ""); // Keep existing attachment
+      } else {
+        values.push(expenseData[header] || "");
+      }
+    });
     
     await updateRow(sessionId, spreadsheetId, row, values);
     res.status(200).json({ message: "Expense updated successfully" });
@@ -496,6 +779,25 @@ app.delete("/expenses/:row", requireAuth, async (req, res) => {
       return res.status(404).json({ error: `Row ${row} does not exist. Sheet has ${rows.length} rows.` });
     }
     
+    // Get attachment file ID before deleting row
+    const headers = rows[0] || [];
+    const expenseRow = rows[row - 1] || [];
+    const attachmentColumnIndex = headers.findIndex((h: string) => 
+      h.toLowerCase().includes("attachment") || h.toLowerCase().includes("file")
+    );
+    
+    if (attachmentColumnIndex >= 0 && expenseRow[attachmentColumnIndex]) {
+      const driveFileId = expenseRow[attachmentColumnIndex];
+      if (driveFileId && driveFileId.trim() !== "") {
+        try {
+          await deleteFileFromDrive(sessionId, driveFileId);
+        } catch (driveError) {
+          console.error("Error deleting file from Drive:", driveError);
+          // Continue with row deletion even if file deletion fails
+        }
+      }
+    }
+    
     await deleteRow(sessionId, spreadsheetId, row);
     res.status(200).json({ message: `Expense at row ${row} deleted successfully` });
   } catch (error: any) {
@@ -504,6 +806,194 @@ app.delete("/expenses/:row", requireAuth, async (req, res) => {
       return res.status(401).json({ error: error.message, authUrl: "/auth/google" });
     }
     res.status(500).json({ error: "Failed to delete expense", details: error.message });
+  }
+});
+
+// ==================== FILE ATTACHMENT ROUTES ====================
+
+// POST /expenses/:row/attachments - Upload file attachment for an expense
+app.post("/expenses/:row/attachments", requireAuth, (req, res, next) => {
+  // Handle file upload with multer middleware
+  upload.single("file")(req, res, (err) => {
+    if (err) {
+      console.error("Multer error:", err);
+      return res.status(400).json({ error: err.message || "File upload failed" });
+    }
+    next();
+  });
+}, async (req, res) => {
+  try {
+    const sessionId = (req as any).userSessionId;
+    const userSession = userSessions[sessionId];
+    const spreadsheetId = userSession!.spreadsheetId!;
+    const row = parseInt(req.params.row);
+
+    if (!req.file) {
+      return res.status(400).json({ error: "No file uploaded" });
+    }
+
+    // Validate row number
+    if (row < 2) {
+      return res.status(400).json({ error: "Cannot add attachment to header row. Row must be 2 or greater." });
+    }
+
+    // Upload file to Google Drive
+    const driveFile = await uploadFileToDrive(
+      sessionId,
+      req.file.path,
+      req.file.originalname,
+      req.file.mimetype
+    );
+
+    // Get headers to find or create attachment column
+    const rows = await readSheet(sessionId, spreadsheetId);
+    const headers = rows[0] || [];
+    const attachmentColumnIndex = headers.findIndex((h: string) => 
+      h.toLowerCase().includes("attachment") || h.toLowerCase().includes("file")
+    );
+
+    // Update or add attachment column
+    await updateAttachmentColumn(
+      sessionId,
+      spreadsheetId,
+      row,
+      attachmentColumnIndex,
+      driveFile.fileId
+    );
+
+    res.status(200).json({
+      message: "File uploaded successfully",
+      fileId: driveFile.fileId,
+      webViewLink: driveFile.webViewLink,
+      webContentLink: driveFile.webContentLink,
+      fileName: req.file.originalname,
+    });
+  } catch (error: any) {
+    console.error("Error uploading attachment:", error);
+    
+    // Clean up uploaded file if it exists
+    if (req.file && fs.existsSync(req.file.path)) {
+      fs.unlinkSync(req.file.path);
+    }
+
+    if (error.message?.includes("Token expired")) {
+      return res.status(401).json({ error: error.message, authUrl: "/auth/google" });
+    }
+    res.status(500).json({ error: "Failed to upload attachment", details: error.message });
+  }
+});
+
+// GET /attachments/:fileId - Download/view file from Google Drive
+app.get("/attachments/:fileId", requireAuth, async (req, res) => {
+  try {
+    const sessionId = (req as any).userSessionId;
+    const fileId = req.params.fileId;
+
+    const file = await getFileFromDrive(sessionId, fileId);
+
+    res.setHeader("Content-Type", file.mimeType);
+    res.setHeader("Content-Disposition", `inline; filename="${file.fileName}"`);
+
+    file.stream.pipe(res);
+  } catch (error: any) {
+    console.error("Error retrieving attachment:", error);
+    if (error.message?.includes("Token expired")) {
+      return res.status(401).json({ error: error.message, authUrl: "/auth/google" });
+    }
+    if (error.code === 404) {
+      return res.status(404).json({ error: "File not found" });
+    }
+    res.status(500).json({ error: "Failed to retrieve attachment", details: error.message });
+  }
+});
+
+// GET /expenses/:row/attachments - Get attachment info for an expense
+app.get("/expenses/:row/attachments", requireAuth, async (req, res) => {
+  try {
+    const sessionId = (req as any).userSessionId;
+    const userSession = userSessions[sessionId];
+    const spreadsheetId = userSession!.spreadsheetId!;
+    const row = parseInt(req.params.row);
+
+    const rows = await readSheet(sessionId, spreadsheetId);
+    const headers = rows[0] || [];
+    const expenseRow = rows[row - 1] || [];
+    
+    const attachmentColumnIndex = headers.findIndex((h: string) => 
+      h.toLowerCase().includes("attachment") || h.toLowerCase().includes("file")
+    );
+
+    if (attachmentColumnIndex < 0 || !expenseRow[attachmentColumnIndex]) {
+      return res.json({ hasAttachment: false, fileId: null });
+    }
+
+    const driveFileId = expenseRow[attachmentColumnIndex];
+    
+    if (!driveFileId || driveFileId.trim() === "") {
+      return res.json({ hasAttachment: false, fileId: null });
+    }
+
+    // Get file metadata from Drive to check if it's an image
+    try {
+      await ensureValidToken(sessionId);
+      const auth = getUserAuthClient(sessionId);
+      const drive = google.drive({ version: "v3", auth });
+      
+      const fileMetadata = await drive.files.get({
+        fileId: driveFileId,
+        fields: "id, name, mimeType, webViewLink, webContentLink",
+      });
+
+      const isImage = fileMetadata.data.mimeType?.startsWith("image/") || false;
+
+      res.json({
+        hasAttachment: true,
+        fileId: driveFileId,
+        fileName: fileMetadata.data.name || "file",
+        mimeType: fileMetadata.data.mimeType || "application/octet-stream",
+        isImage: isImage,
+        downloadUrl: `/attachments/${driveFileId}`,
+        webViewLink: fileMetadata.data.webViewLink,
+      });
+    } catch (driveError: any) {
+      // If we can't get metadata, still return basic info
+      console.error("Error getting file metadata:", driveError);
+      res.json({
+        hasAttachment: true,
+        fileId: driveFileId,
+        fileName: "file",
+        mimeType: "application/octet-stream",
+        isImage: false,
+        downloadUrl: `/attachments/${driveFileId}`,
+      });
+    }
+  } catch (error: any) {
+    console.error("Error getting attachment info:", error);
+    if (error.message?.includes("Token expired")) {
+      return res.status(401).json({ error: error.message, authUrl: "/auth/google" });
+    }
+    res.status(500).json({ error: "Failed to get attachment info", details: error.message });
+  }
+});
+
+// DELETE /attachments/:fileId - Delete file from Google Drive
+app.delete("/attachments/:fileId", requireAuth, async (req, res) => {
+  try {
+    const sessionId = (req as any).userSessionId;
+    const fileId = req.params.fileId;
+
+    await deleteFileFromDrive(sessionId, fileId);
+
+    res.status(200).json({ message: "File deleted successfully" });
+  } catch (error: any) {
+    console.error("Error deleting attachment:", error);
+    if (error.message?.includes("Token expired")) {
+      return res.status(401).json({ error: error.message, authUrl: "/auth/google" });
+    }
+    if (error.code === 404) {
+      return res.status(404).json({ error: "File not found" });
+    }
+    res.status(500).json({ error: "Failed to delete attachment", details: error.message });
   }
 });
 
