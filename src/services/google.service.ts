@@ -306,6 +306,105 @@ export class GoogleService {
     }
   }
 
+  // Create a new Google Sheet
+  async createSheet(
+    sessionId: string,
+    name: string,
+    headers?: string[],
+    sampleRows?: any[][]
+  ): Promise<string> {
+    try {
+      await this.ensureValidToken(sessionId);
+      const auth = await this.getUserAuthClient(sessionId);
+      const drive = google.drive({ version: "v3", auth });
+      const sheets = google.sheets({ version: "v4", auth });
+
+      // Create new spreadsheet
+      const spreadsheet = await sheets.spreadsheets.create({
+        requestBody: {
+          properties: {
+            title: name,
+          },
+        },
+      });
+
+      const spreadsheetId = spreadsheet.data.spreadsheetId;
+      if (!spreadsheetId) {
+        throw new Error("Failed to create spreadsheet");
+      }
+
+      // If headers provided, add them
+      if (headers && headers.length > 0) {
+        await sheets.spreadsheets.values.update({
+          spreadsheetId: spreadsheetId,
+          range: `${RANGE}!A1:${this.getColumnLetter(headers.length - 1)}1`,
+          valueInputOption: "USER_ENTERED",
+          requestBody: { values: [headers] },
+        });
+
+        // Format header row (bold, background color)
+        await sheets.spreadsheets.batchUpdate({
+          spreadsheetId: spreadsheetId,
+          requestBody: {
+            requests: [
+              {
+                repeatCell: {
+                  range: {
+                    sheetId: 0,
+                    startRowIndex: 0,
+                    endRowIndex: 1,
+                  },
+                  cell: {
+                    userEnteredFormat: {
+                      backgroundColor: { red: 0.2, green: 0.4, blue: 0.8, alpha: 1 },
+                      textFormat: { bold: true, foregroundColor: { red: 1, green: 1, blue: 1 } },
+                    },
+                  },
+                  fields: "userEnteredFormat(backgroundColor,textFormat)",
+                },
+              },
+            ],
+          },
+        });
+
+        // Add sample rows if provided
+        if (sampleRows && sampleRows.length > 0) {
+          await sheets.spreadsheets.values.append({
+            spreadsheetId: spreadsheetId,
+            range: `${RANGE}!A:Z`,
+            valueInputOption: "USER_ENTERED",
+            requestBody: { values: sampleRows },
+          });
+        }
+      }
+
+      return spreadsheetId;
+    } catch (error: any) {
+      console.error("Error creating sheet:", error);
+      throw error;
+    }
+  }
+
+  // Verify user has access to a spreadsheet
+  async verifySpreadsheetAccess(sessionId: string, spreadsheetId: string): Promise<boolean> {
+    try {
+      await this.ensureValidToken(sessionId);
+      const auth = await this.getUserAuthClient(sessionId);
+      const sheets = google.sheets({ version: "v4", auth });
+      
+      // Try to read the first row
+      await sheets.spreadsheets.values.get({
+        spreadsheetId: spreadsheetId,
+        range: `${RANGE}!1:1`,
+      });
+      
+      return true;
+    } catch (error: any) {
+      console.error("Error verifying spreadsheet access:", error);
+      return false;
+    }
+  }
+
   // Helper function to convert column index to column letter
   private getColumnLetter(columnIndex: number): string {
     let result = "";

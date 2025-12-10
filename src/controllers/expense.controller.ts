@@ -14,13 +14,13 @@ export class ExpenseController {
   getExpenses = async (req: Request, res: Response) => {
     try {
       const sessionId = (req as any).userSessionId;
-      const user = await User.findOne({ where: { sessionId } });
+      const spreadsheetId = (req as any).user.spreadsheetId;
       
-      if (!user || !user.spreadsheetId) {
+      if (!spreadsheetId) {
         return res.status(400).json({ error: "No spreadsheet connected" });
       }
 
-      const rows = await this.googleService.readSheet(sessionId, user.spreadsheetId);
+      const rows = await this.googleService.readSheet(sessionId, spreadsheetId);
       
       // Convert rows to objects (assuming first row is headers)
       const headers = rows[0] || [];
@@ -46,16 +46,16 @@ export class ExpenseController {
   createExpense = async (req: Request, res: Response) => {
     try {
       const sessionId = (req as any).userSessionId;
-      const user = await User.findOne({ where: { sessionId } });
+      const spreadsheetId = (req as any).user.spreadsheetId;
       
-      if (!user || !user.spreadsheetId) {
+      if (!spreadsheetId) {
         return res.status(400).json({ error: "No spreadsheet connected" });
       }
 
       const expenseData = req.body;
       
       // Get headers to ensure all columns are included
-      const rows = await this.googleService.readSheet(sessionId, user.spreadsheetId);
+      const rows = await this.googleService.readSheet(sessionId, spreadsheetId);
       const headers = rows[0] || [];
       
       // Convert expense object to array of values matching header order
@@ -68,7 +68,7 @@ export class ExpenseController {
         }
       });
       
-      await this.googleService.appendToSheet(sessionId, user.spreadsheetId, [values]);
+      await this.googleService.appendToSheet(sessionId, spreadsheetId, [values]);
       res.status(200).json({ message: "Expense added successfully" });
     } catch (error: any) {
       console.error("Error adding expense:", error);
@@ -83,9 +83,9 @@ export class ExpenseController {
   updateExpense = async (req: Request, res: Response) => {
     try {
       const sessionId = (req as any).userSessionId;
-      const user = await User.findOne({ where: { sessionId } });
+      const spreadsheetId = (req as any).user.spreadsheetId;
       
-      if (!user || !user.spreadsheetId) {
+      if (!spreadsheetId) {
         return res.status(400).json({ error: "No spreadsheet connected" });
       }
 
@@ -98,7 +98,7 @@ export class ExpenseController {
       const expenseData = req.body;
       
       // Get headers to ensure all columns are included
-      const rows = await this.googleService.readSheet(sessionId, user.spreadsheetId);
+      const rows = await this.googleService.readSheet(sessionId, spreadsheetId);
       const headers = rows[0] || [];
       const currentRow = rows[row - 1] || [];
       
@@ -112,7 +112,7 @@ export class ExpenseController {
         }
       });
       
-      await this.googleService.updateRow(sessionId, user.spreadsheetId, row, values);
+      await this.googleService.updateRow(sessionId, spreadsheetId, row, values);
       res.status(200).json({ message: "Expense updated successfully" });
     } catch (error: any) {
       console.error("Error updating expense:", error);
@@ -127,9 +127,9 @@ export class ExpenseController {
   deleteExpense = async (req: Request, res: Response) => {
     try {
       const sessionId = (req as any).userSessionId;
-      const user = await User.findOne({ where: { sessionId } });
+      const spreadsheetId = (req as any).user.spreadsheetId;
       
-      if (!user || !user.spreadsheetId) {
+      if (!spreadsheetId) {
         return res.status(400).json({ error: "No spreadsheet connected" });
       }
 
@@ -140,7 +140,7 @@ export class ExpenseController {
       }
       
       // Check if row exists before deleting
-      const rows = await this.googleService.readSheet(sessionId, user.spreadsheetId);
+      const rows = await this.googleService.readSheet(sessionId, spreadsheetId);
       if (row > rows.length) {
         return res.status(404).json({ error: `Row ${row} does not exist. Sheet has ${rows.length} rows.` });
       }
@@ -164,7 +164,7 @@ export class ExpenseController {
         }
       }
       
-      await this.googleService.deleteRow(sessionId, user.spreadsheetId, row);
+      await this.googleService.deleteRow(sessionId, spreadsheetId, row);
       res.status(200).json({ message: `Expense at row ${row} deleted successfully` });
     } catch (error: any) {
       console.error("Error deleting expense:", error);
@@ -179,9 +179,9 @@ export class ExpenseController {
   uploadAttachment = async (req: Request, res: Response) => {
     try {
       const sessionId = (req as any).userSessionId;
-      const user = await User.findOne({ where: { sessionId } });
+      const spreadsheetId = (req as any).user.spreadsheetId;
       
-      if (!user || !user.spreadsheetId) {
+      if (!spreadsheetId) {
         return res.status(400).json({ error: "No spreadsheet connected" });
       }
 
@@ -204,7 +204,7 @@ export class ExpenseController {
       );
 
       // Get headers to find or create attachment column
-      const rows = await this.googleService.readSheet(sessionId, user.spreadsheetId);
+      const rows = await this.googleService.readSheet(sessionId, spreadsheetId);
       const headers = rows[0] || [];
       const attachmentColumnIndex = headers.findIndex((h: string) => 
         h.toLowerCase().includes("attachment") || h.toLowerCase().includes("file")
@@ -213,7 +213,7 @@ export class ExpenseController {
       // Update or add attachment column
       await this.googleService.updateAttachmentColumn(
         sessionId,
-        user.spreadsheetId,
+        spreadsheetId,
         row,
         attachmentColumnIndex,
         driveFile.fileId
@@ -245,15 +245,15 @@ export class ExpenseController {
   getAttachment = async (req: Request, res: Response) => {
     try {
       const sessionId = (req as any).userSessionId;
-      const user = await User.findOne({ where: { sessionId } });
+      const spreadsheetId = (req as any).user.spreadsheetId;
       
-      if (!user || !user.spreadsheetId) {
+      if (!spreadsheetId) {
         return res.status(400).json({ error: "No spreadsheet connected" });
       }
 
       const row = parseInt(req.params.row);
 
-      const rows = await this.googleService.readSheet(sessionId, user.spreadsheetId);
+      const rows = await this.googleService.readSheet(sessionId, spreadsheetId);
       const headers = rows[0] || [];
       const expenseRow = rows[row - 1] || [];
       

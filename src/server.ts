@@ -7,9 +7,11 @@ import sequelize from "./config/database";
 import User from "./models/User";
 import { AuthController } from "./controllers/auth.controller";
 import { ExpenseController } from "./controllers/expense.controller";
+import { ProjectController } from "./controllers/project.controller";
 import { GoogleService } from "./services/google.service";
 import { createAuthRoutes } from "./routes/auth.routes";
 import { createExpenseRoutes, createAttachmentRoutes } from "./routes/expense.routes";
+import { createProjectRoutes } from "./routes/project.routes";
 import { requireAuth } from "./middleware/auth.middleware";
 
 dotenv.config();
@@ -24,8 +26,9 @@ app.use(express.urlencoded({ extended: true }));
 app.use(cors({
   origin: process.env.FRONTEND_URL || "http://localhost:5173",
   credentials: true,
-  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'X-Session-Id', 'Authorization'],
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS', 'PATCH'],
+  allowedHeaders: ['Content-Type', 'X-Session-Id', 'X-Project-Id', 'Authorization'],
+  exposedHeaders: ['X-Session-Id', 'X-Project-Id'],
 }));
 
 // Session configuration
@@ -58,11 +61,13 @@ const googleService = new GoogleService(oauth2Client);
 // Initialize controllers
 const authController = new AuthController(oauth2Client, FRONTEND_URL);
 const expenseController = new ExpenseController(googleService);
+const projectController = new ProjectController(googleService);
 
 // Routes
 app.use("/auth", createAuthRoutes(authController));
 app.use("/expenses", requireAuth, createExpenseRoutes(expenseController));
 app.use("/attachments", requireAuth, createAttachmentRoutes(expenseController));
+app.use("/projects", createProjectRoutes(projectController));
 
 // Health check endpoint
 app.get("/health", (req, res) => {
@@ -77,7 +82,7 @@ async function startServer() {
     console.log("✅ Database connection established successfully.");
 
     // Sync database models (create tables if they don't exist)
-    await sequelize.sync({ alter: true });
+    await sequelize.sync();
     console.log("✅ Database models synchronized.");
 
     const PORT = process.env.PORT || 3000;
