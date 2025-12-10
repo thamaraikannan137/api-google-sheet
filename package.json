@@ -23,12 +23,15 @@
   "dependencies": {
     "@types/express-session": "^1.18.2",
     "@types/multer": "^2.0.0",
+    "@types/sequelize": "^4.28.20",
     "cors": "^2.8.5",
     "dotenv": "^17.2.3",
     "express": "^5.1.0",
     "express-session": "^1.18.2",
     "googleapis": "^166.0.0",
     "multer": "^2.0.2",
-    "node-fetch": "^3.3.2"
+    "node-fetch": "^3.3.2",
+    "sequelize": "^6.37.7",
+    "sqlite3": "^5.1.7"
   }
 }
