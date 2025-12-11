@@ -147,7 +147,7 @@ export class GoogleService {
     filePath: string,
     fileName: string,
     mimeType: string,
-    folderName: string = "Expense Attachments"
+    folderName: string = "Liability Attachments"
   ): Promise<{ fileId: string; webViewLink: string; webContentLink: string }> {
     try {
       await this.ensureValidToken(sessionId);

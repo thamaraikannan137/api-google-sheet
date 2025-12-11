@@ -26,8 +26,8 @@ async function connectSpreadsheet() {
     if (response.ok) {
       console.log('✅ Success!', data);
       console.log('\n📋 You can now use:');
-      console.log('  GET  http://localhost:3000/expenses');
-      console.log('  POST http://localhost:3000/expenses');
+      console.log('  GET  http://localhost:3000/liabilities');
+      console.log('  POST http://localhost:3000/liabilities');
     } else {
       console.error('❌ Error:', data);
     }

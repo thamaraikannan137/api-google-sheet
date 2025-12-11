@@ -9,12 +9,12 @@ export interface Template {
 export const TEMPLATES: Template[] = [
   {
     id: 1,
-    name: 'Expense Tracker',
-    description: 'Track daily expenses with categories and payment methods',
+    name: 'Liability Tracker',
+    description: 'Track liabilities with categories and payment methods',
     headers: ['Date', 'Description', 'Amount', 'Category', 'Payment Method', 'Notes'],
     sampleRows: [
-      ['2024-01-15', 'Lunch', '25.50', 'Food', 'Credit Card', 'Team lunch'],
-      ['2024-01-16', 'Gas', '45.00', 'Transportation', 'Debit Card', ''],
+      ['2024-01-15', 'Loan Payment', '25.50', 'Debt', 'Bank Transfer', 'Monthly payment'],
+      ['2024-01-16', 'Credit Card', '45.00', 'Credit', 'Debit Card', ''],
     ],
   },
   {

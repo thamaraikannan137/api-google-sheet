@@ -6,11 +6,11 @@ import { google } from "googleapis";
 import sequelize from "./config/database";
 import User from "./models/User";
 import { AuthController } from "./controllers/auth.controller";
-import { ExpenseController } from "./controllers/expense.controller";
+import { LiabilityController } from "./controllers/liability.controller";
 import { ProjectController } from "./controllers/project.controller";
 import { GoogleService } from "./services/google.service";
 import { createAuthRoutes } from "./routes/auth.routes";
-import { createExpenseRoutes, createAttachmentRoutes } from "./routes/expense.routes";
+import { createLiabilityRoutes, createAttachmentRoutes } from "./routes/liability.routes";
 import { createProjectRoutes } from "./routes/project.routes";
 import { requireAuth } from "./middleware/auth.middleware";
 
@@ -60,13 +60,13 @@ const googleService = new GoogleService(oauth2Client);
 
 // Initialize controllers
 const authController = new AuthController(oauth2Client, FRONTEND_URL);
-const expenseController = new ExpenseController(googleService);
+const liabilityController = new LiabilityController(googleService);
 const projectController = new ProjectController(googleService);
 
 // Routes
 app.use("/auth", createAuthRoutes(authController));
-app.use("/expenses", requireAuth, createExpenseRoutes(expenseController));
-app.use("/attachments", requireAuth, createAttachmentRoutes(expenseController));
+app.use("/liabilities", requireAuth, createLiabilityRoutes(liabilityController));
+app.use("/attachments", requireAuth, createAttachmentRoutes(liabilityController));
 app.use("/projects", createProjectRoutes(projectController));
 
 // Health check endpoint

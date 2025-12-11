@@ -2,7 +2,7 @@ import { Router } from 'express';
 import multer from 'multer';
 import path from 'path';
 import fs from 'fs';
-import { ExpenseController } from '../controllers/expense.controller';
+import { LiabilityController } from '../controllers/liability.controller';
 import { getSessionId } from '../middleware/auth.middleware';
 
 // Create uploads directory if it doesn't exist
@@ -58,27 +58,27 @@ const upload = multer({
   fileFilter: fileFilter,
 });
 
-export function createExpenseRoutes(expenseController: ExpenseController): Router {
+export function createLiabilityRoutes(liabilityController: LiabilityController): Router {
   const router = Router();
 
-  router.get('/', expenseController.getExpenses);
-  router.post('/', expenseController.createExpense);
-  router.put('/:row', expenseController.updateExpense);
-  router.delete('/:row', expenseController.deleteExpense);
+  router.get('/', liabilityController.getLiabilitys);
+  router.post('/', liabilityController.createLiability);
+  router.put('/:row', liabilityController.updateLiability);
+  router.delete('/:row', liabilityController.deleteLiability);
   
-  // Attachment routes for specific expenses
-  router.post('/:row/attachments', upload.single('file'), expenseController.uploadAttachment);
-  router.get('/:row/attachments', expenseController.getAttachment);
+  // Attachment routes for specific liabilitys
+  router.post('/:row/attachments', upload.single('file'), liabilityController.uploadAttachment);
+  router.get('/:row/attachments', liabilityController.getAttachment);
 
   return router;
 }
 
 // Separate attachment routes (for direct file access)
-export function createAttachmentRoutes(expenseController: ExpenseController): Router {
+export function createAttachmentRoutes(liabilityController: LiabilityController): Router {
   const router = Router();
 
-  router.get('/:fileId', expenseController.downloadAttachment);
-  router.delete('/:fileId', expenseController.deleteAttachment);
+  router.get('/:fileId', liabilityController.downloadAttachment);
+  router.delete('/:fileId', liabilityController.deleteAttachment);
 
   return router;
 }

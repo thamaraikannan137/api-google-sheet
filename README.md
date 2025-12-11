@@ -1,6 +1,6 @@
-# Expense Tracking SaaS API - Google Sheets Integration
+# Liability Tracking SaaS API - Google Sheets Integration
 
-A SaaS expense tracking API where users store their data in their own Google Sheets for privacy. Each user authenticates with their Google account and connects their own spreadsheet.
+A SaaS liability tracking API where users store their data in their own Google Sheets for privacy. Each user authenticates with their Google account and connects their own spreadsheet.
 
 ## 🎯 Features
 
@@ -121,10 +121,10 @@ Logout user and clear session.
 
 ### Expense Management
 
-All expense endpoints require authentication (use the same browser session).
+All liability endpoints require authentication (use the same browser session).
 
-#### `GET /expenses`
-Get all expenses from user's connected spreadsheet.
+#### `GET /liabilities`
+Get all liabilities from user's connected spreadsheet.
 
 **Response:**
 ```json
@@ -138,8 +138,8 @@ Get all expenses from user's connected spreadsheet.
 ]
 ```
 
-#### `POST /expenses`
-Add a new expense to user's spreadsheet.
+#### `POST /liabilities`
+Add a new liability to user's spreadsheet.
 
 **Request Body:**
 ```json
@@ -151,8 +151,8 @@ Add a new expense to user's spreadsheet.
 }
 ```
 
-#### `PUT /expenses/:row`
-Update an expense at a specific row number.
+#### `PUT /liabilities/:row`
+Update an liability at a specific row number.
 
 **Request Body:**
 ```json
@@ -169,7 +169,7 @@ Update an expense at a specific row number.
 1. **User visits** `GET /auth/google`
 2. **User grants permission** on Google consent screen
 3. **User connects spreadsheet** via `POST /auth/connect` with their spreadsheet ID
-4. **User can now** read/write expenses to their own Google Sheet
+4. **User can now** read/write liabilities to their own Google Sheet
 
 ## 🔒 Privacy & Security
 

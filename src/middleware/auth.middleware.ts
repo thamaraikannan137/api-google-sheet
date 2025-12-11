@@ -19,12 +19,14 @@ export function getSessionId(req: Request): string | null {
 
 // Helper function to get project ID from request
 export function getProjectId(req: Request): number | null {
+  // First try header
   const headerProjectId = req.headers['x-project-id'] as string;
   if (headerProjectId) {
     const id = parseInt(headerProjectId);
     return isNaN(id) ? null : id;
   }
 
+  // Then try query parameter (useful for file downloads via <img> tags)
   const queryProjectId = req.query.projectId as string;
   if (queryProjectId) {
     const id = parseInt(queryProjectId);

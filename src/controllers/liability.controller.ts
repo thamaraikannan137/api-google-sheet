@@ -3,15 +3,15 @@ import User from '../models/User';
 import { GoogleService } from '../services/google.service';
 import fs from 'fs';
 
-export class ExpenseController {
+export class LiabilityController {
   private googleService: GoogleService;
 
   constructor(googleService: GoogleService) {
     this.googleService = googleService;
   }
 
-  // GET /expenses - Read all expenses from the user's sheet
-  getExpenses = async (req: Request, res: Response) => {
+  // GET /liabilitys - Read all liabilitys from the user's sheet
+  getLiabilitys = async (req: Request, res: Response) => {
     try {
       const sessionId = (req as any).userSessionId;
       const spreadsheetId = (req as any).user.spreadsheetId;
@@ -24,26 +24,26 @@ export class ExpenseController {
       
       // Convert rows to objects (assuming first row is headers)
       const headers = rows[0] || [];
-      const expenses = rows.slice(1).map((row) => {
-        const expense: any = {};
+      const liabilitys = rows.slice(1).map((row) => {
+        const liability: any = {};
         headers.forEach((header: string, index: number) => {
-          expense[header] = row[index] || "";
+          liability[header] = row[index] || "";
         });
-        return expense;
+        return liability;
       });
       
-      res.json(expenses);
+      res.json(liabilitys);
     } catch (error: any) {
-      console.error("Error fetching expenses:", error);
+      console.error("Error fetching liabilitys:", error);
       if (error.message?.includes("Token expired")) {
         return res.status(401).json({ error: error.message, authUrl: "/auth/google" });
       }
-      res.status(500).json({ error: "Failed to read expenses", details: error.message });
+      res.status(500).json({ error: "Failed to read liabilitys", details: error.message });
     }
   };
 
-  // POST /expenses - Add a new expense to the user's sheet
-  createExpense = async (req: Request, res: Response) => {
+  // POST /liabilitys - Add a new liability to the user's sheet
+  createLiability = async (req: Request, res: Response) => {
     try {
       const sessionId = (req as any).userSessionId;
       const spreadsheetId = (req as any).user.spreadsheetId;
@@ -52,35 +52,35 @@ export class ExpenseController {
         return res.status(400).json({ error: "No spreadsheet connected" });
       }
 
-      const expenseData = req.body;
+      const liabilityData = req.body;
       
       // Get headers to ensure all columns are included
       const rows = await this.googleService.readSheet(sessionId, spreadsheetId);
       const headers = rows[0] || [];
       
-      // Convert expense object to array of values matching header order
+      // Convert liability object to array of values matching header order
       const values: any[] = [];
       headers.forEach((header: string) => {
         if (header.toLowerCase().includes("attachment") || header.toLowerCase().includes("file")) {
           values.push(""); // Empty for attachment column
         } else {
-          values.push(expenseData[header] || "");
+          values.push(liabilityData[header] || "");
         }
       });
       
       await this.googleService.appendToSheet(sessionId, spreadsheetId, [values]);
-      res.status(200).json({ message: "Expense added successfully" });
+      res.status(200).json({ message: "Liability added successfully" });
     } catch (error: any) {
-      console.error("Error adding expense:", error);
+      console.error("Error adding liability:", error);
       if (error.message?.includes("Token expired")) {
         return res.status(401).json({ error: error.message, authUrl: "/auth/google" });
       }
-      res.status(500).json({ error: "Failed to add expense", details: error.message });
+      res.status(500).json({ error: "Failed to add liability", details: error.message });
     }
   };
 
-  // PUT /expenses/:row - Update an expense at a specific row in user's sheet
-  updateExpense = async (req: Request, res: Response) => {
+  // PUT /liabilitys/:row - Update an liability at a specific row in user's sheet
+  updateLiability = async (req: Request, res: Response) => {
     try {
       const sessionId = (req as any).userSessionId;
       const spreadsheetId = (req as any).user.spreadsheetId;
@@ -95,36 +95,36 @@ export class ExpenseController {
         return res.status(400).json({ error: "Cannot update header row. Row must be 2 or greater." });
       }
       
-      const expenseData = req.body;
+      const liabilityData = req.body;
       
       // Get headers to ensure all columns are included
       const rows = await this.googleService.readSheet(sessionId, spreadsheetId);
       const headers = rows[0] || [];
       const currentRow = rows[row - 1] || [];
       
-      // Convert expense object to array of values matching header order
+      // Convert liability object to array of values matching header order
       const values: any[] = [];
       headers.forEach((header: string, index: number) => {
         if (header.toLowerCase().includes("attachment") || header.toLowerCase().includes("file")) {
           values.push(currentRow[index] || ""); // Keep existing attachment
         } else {
-          values.push(expenseData[header] || "");
+          values.push(liabilityData[header] || "");
         }
       });
       
       await this.googleService.updateRow(sessionId, spreadsheetId, row, values);
-      res.status(200).json({ message: "Expense updated successfully" });
+      res.status(200).json({ message: "Liability updated successfully" });
     } catch (error: any) {
-      console.error("Error updating expense:", error);
+      console.error("Error updating liability:", error);
       if (error.message?.includes("Token expired")) {
         return res.status(401).json({ error: error.message, authUrl: "/auth/google" });
       }
-      res.status(500).json({ error: "Failed to update expense", details: error.message });
+      res.status(500).json({ error: "Failed to update liability", details: error.message });
     }
   };
 
-  // DELETE /expenses/:row - Delete an expense at a specific row in user's sheet
-  deleteExpense = async (req: Request, res: Response) => {
+  // DELETE /liabilitys/:row - Delete an liability at a specific row in user's sheet
+  deleteLiability = async (req: Request, res: Response) => {
     try {
       const sessionId = (req as any).userSessionId;
       const spreadsheetId = (req as any).user.spreadsheetId;
@@ -147,13 +147,13 @@ export class ExpenseController {
       
       // Get attachment file ID before deleting row
       const headers = rows[0] || [];
-      const expenseRow = rows[row - 1] || [];
+      const liabilityRow = rows[row - 1] || [];
       const attachmentColumnIndex = headers.findIndex((h: string) => 
         h.toLowerCase().includes("attachment") || h.toLowerCase().includes("file")
       );
       
-      if (attachmentColumnIndex >= 0 && expenseRow[attachmentColumnIndex]) {
-        const driveFileId = expenseRow[attachmentColumnIndex];
+      if (attachmentColumnIndex >= 0 && liabilityRow[attachmentColumnIndex]) {
+        const driveFileId = liabilityRow[attachmentColumnIndex];
         if (driveFileId && driveFileId.trim() !== "") {
           try {
             await this.googleService.deleteFileFromDrive(sessionId, driveFileId);
@@ -165,29 +165,52 @@ export class ExpenseController {
       }
       
       await this.googleService.deleteRow(sessionId, spreadsheetId, row);
-      res.status(200).json({ message: `Expense at row ${row} deleted successfully` });
+      res.status(200).json({ message: `Liability at row ${row} deleted successfully` });
     } catch (error: any) {
-      console.error("Error deleting expense:", error);
+      console.error("Error deleting liability:", error);
       if (error.message?.includes("Token expired")) {
         return res.status(401).json({ error: error.message, authUrl: "/auth/google" });
       }
-      res.status(500).json({ error: "Failed to delete expense", details: error.message });
+      res.status(500).json({ error: "Failed to delete liability", details: error.message });
     }
   };
 
-  // POST /expenses/:row/attachments - Upload file attachment for an expense
+  // POST /liabilitys/:row/attachments - Upload file attachment for an liability
   uploadAttachment = async (req: Request, res: Response) => {
     try {
       const sessionId = (req as any).userSessionId;
       const spreadsheetId = (req as any).user.spreadsheetId;
+      const projectId = (req as any).user.projectId;
+      
+      console.log('Upload attachment request:', {
+        sessionId,
+        spreadsheetId,
+        projectId,
+        row: req.params.row,
+        hasFile: !!req.file,
+        fileDetails: req.file ? {
+          name: req.file.originalname,
+          size: req.file.size,
+          type: req.file.mimetype
+        } : null
+      });
       
       if (!spreadsheetId) {
-        return res.status(400).json({ error: "No spreadsheet connected" });
+        console.error('No spreadsheet ID found');
+        return res.status(400).json({ 
+          error: "No spreadsheet connected. Please ensure you have a project selected.",
+          details: {
+            sessionId,
+            projectId,
+            hasUser: !!(req as any).user
+          }
+        });
       }
 
       const row = parseInt(req.params.row);
 
       if (!req.file) {
+        console.error('No file in request');
         return res.status(400).json({ error: "No file uploaded" });
       }
 
@@ -241,7 +264,7 @@ export class ExpenseController {
     }
   };
 
-  // GET /expenses/:row/attachments - Get attachment info for an expense
+  // GET /liabilitys/:row/attachments - Get attachment info for an liability
   getAttachment = async (req: Request, res: Response) => {
     try {
       const sessionId = (req as any).userSessionId;
@@ -255,17 +278,17 @@ export class ExpenseController {
 
       const rows = await this.googleService.readSheet(sessionId, spreadsheetId);
       const headers = rows[0] || [];
-      const expenseRow = rows[row - 1] || [];
+      const liabilityRow = rows[row - 1] || [];
       
       const attachmentColumnIndex = headers.findIndex((h: string) => 
         h.toLowerCase().includes("attachment") || h.toLowerCase().includes("file")
       );
 
-      if (attachmentColumnIndex < 0 || !expenseRow[attachmentColumnIndex]) {
+      if (attachmentColumnIndex < 0 || !liabilityRow[attachmentColumnIndex]) {
         return res.json({ hasAttachment: false, fileId: null });
       }
 
-      const driveFileId = expenseRow[attachmentColumnIndex];
+      const driveFileId = liabilityRow[attachmentColumnIndex];
       
       if (!driveFileId || driveFileId.trim() === "") {
         return res.json({ hasAttachment: false, fileId: null });
@@ -318,11 +341,29 @@ export class ExpenseController {
     try {
       const sessionId = (req as any).userSessionId;
       const fileId = req.params.fileId;
+      const projectId = (req as any).user?.projectId;
+
+      console.log('Download attachment request:', {
+        sessionId,
+        fileId,
+        projectId,
+        queryParams: req.query,
+        headers: {
+          'x-session-id': req.headers['x-session-id'],
+          'x-project-id': req.headers['x-project-id']
+        }
+      });
 
       const file = await this.googleService.getFileFromDrive(sessionId, fileId);
 
+      console.log('File retrieved from Drive:', {
+        fileName: file.fileName,
+        mimeType: file.mimeType
+      });
+
       res.setHeader("Content-Type", file.mimeType);
       res.setHeader("Content-Disposition", `inline; filename="${file.fileName}"`);
+      res.setHeader("Access-Control-Allow-Origin", "*"); // Allow cross-origin requests for images
 
       file.stream.pipe(res);
     } catch (error: any) {
